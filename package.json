@@ -1,0 +1,19 @@
+{
+  "name": "polymarket-insights",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"node server.js\" \"vite --port 5173\"",
+    "server": "node server.js",
+    "client": "vite --port 5173"
+  },
+  "dependencies": {
+    "concurrently": "^9.1.2",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0"
+  }
+}
