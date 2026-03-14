@@ -1,11 +1,25 @@
 import express from 'express';
 import cors from 'cors';
 import fetch from 'node-fetch';
+import dotenv from 'dotenv';
+import { GoogleGenAI } from '@google/genai';
+
+dotenv.config();
 
 const app = express();
 const PORT = 3001;
 
 app.use(cors());
+app.use(express.json());
+
+// Initialize Gemini
+let genai = null;
+if (process.env.GEMINI_API_KEY) {
+  genai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  console.log('✅ Gemini AI initialized');
+} else {
+  console.warn('⚠️  GEMINI_API_KEY not set in .env — AI analysis will be unavailable');
+}
 
 // Parse Google News RSS feed into article objects
 function parseRSSItems(xml) {
@@ -143,6 +157,133 @@ app.get('/api/search', async (req, res) => {
   } catch (error) {
     console.error('Search error:', error);
     res.status(500).json({ error: 'Search failed', details: error.message });
+  }
+});
+
+// ============================================
+// AI ANALYSIS ENDPOINT (Gemini)
+// ============================================
+
+const ANALYSIS_PROMPT = `You are an expert prediction market analyst. Your job is to analyze a Polymarket betting event and determine if there is a profitable opportunity.
+
+You will receive structured data about a prediction market event including:
+- The event title and description
+- Current outcome probabilities (prices)
+- Trading volume and liquidity data
+- Recent news headlines about the topic
+- Market metadata (topic, risk score, days until resolution)
+
+Based on ALL available evidence, provide your analysis as a JSON object with these EXACT fields:
+
+{
+  "verdict": "OPPORTUNITY" | "HOLD" | "AVOID",
+  "confidence": <number 0-100>,
+  "reasoning": "<2-3 sentence analysis explaining your verdict>",
+  "edge": "<1 sentence describing the specific market inefficiency or opportunity, or why none exists>",
+  "suggestedOutcome": "<the specific outcome to bet on, or 'None' if HOLD/AVOID>",
+  "suggestedPrice": "<the fair probability you estimate for the suggested outcome, e.g. '72%', or 'N/A'>",
+  "riskWarnings": ["<warning 1>", "<warning 2>"]
+}
+
+IMPORTANT RULES:
+- OPPORTUNITY = you believe the market price is significantly wrong (>5% mispricing) AND there's strong evidence for a different probability
+- HOLD = interesting market but no clear mispricing, or evidence is mixed
+- AVOID = market is efficient, too risky, too illiquid, or too uncertain to have an edge
+- Be CONSERVATIVE. Most markets are efficiently priced. Only call OPPORTUNITY when evidence strongly supports it.
+- Consider liquidity — thin markets are riskier even if mispriced
+- Consider time decay — markets close to resolution with high certainty are less interesting
+- News recency matters — recent developments may not yet be priced in (this is where opportunities arise)
+- ALWAYS respond with valid JSON only, no markdown formatting around it`;
+
+app.post('/api/analyze', async (req, res) => {
+  if (!genai) {
+    return res.status(503).json({
+      error: 'AI not configured',
+      message: 'Set GEMINI_API_KEY in .env file to enable AI analysis'
+    });
+  }
+
+  const { event } = req.body;
+  if (!event) {
+    return res.status(400).json({ error: 'Event data is required' });
+  }
+
+  try {
+    // Build the analysis context
+    const context = JSON.stringify(event, null, 2);
+    const userPrompt = `Analyze this prediction market event and provide your verdict:\n\n${context}`;
+
+    // Retry logic for rate limiting
+    let response;
+    const maxRetries = 3;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        response = await genai.models.generateContent({
+          model: 'gemini-2.0-flash',
+          contents: userPrompt,
+          config: {
+            systemInstruction: ANALYSIS_PROMPT,
+            temperature: 0.3,
+            maxOutputTokens: 1000,
+          }
+        });
+        break; // Success — exit retry loop
+      } catch (apiError) {
+        if (apiError.status === 429 && attempt < maxRetries) {
+          const delay = Math.pow(2, attempt + 1) * 5000; // 10s, 20s, 40s
+          console.log(`Rate limited, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...`);
+          await new Promise(r => setTimeout(r, delay));
+        } else {
+          throw apiError;
+        }
+      }
+    }
+
+    const text = response.text.trim();
+
+    // Parse the JSON from the response (strip markdown fences if present)
+    let jsonStr = text;
+    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      jsonStr = jsonMatch[1].trim();
+    }
+
+    const analysis = JSON.parse(jsonStr);
+
+    // Validate required fields
+    const required = ['verdict', 'confidence', 'reasoning', 'edge', 'suggestedOutcome', 'riskWarnings'];
+    for (const field of required) {
+      if (!(field in analysis)) {
+        throw new Error(`Missing field: ${field}`);
+      }
+    }
+
+    // Normalize verdict
+    analysis.verdict = analysis.verdict.toUpperCase();
+    if (!['OPPORTUNITY', 'HOLD', 'AVOID'].includes(analysis.verdict)) {
+      analysis.verdict = 'HOLD';
+    }
+
+    // Clamp confidence
+    analysis.confidence = Math.max(0, Math.min(100, parseInt(analysis.confidence) || 50));
+
+    res.json(analysis);
+  } catch (error) {
+    console.error('AI analysis error:', error);
+    res.status(500).json({
+      error: 'AI analysis failed',
+      message: error.message,
+      // Provide a fallback verdict
+      fallback: {
+        verdict: 'HOLD',
+        confidence: 0,
+        reasoning: 'Unable to complete AI analysis. Please check your API key and try again.',
+        edge: 'Analysis unavailable',
+        suggestedOutcome: 'None',
+        suggestedPrice: 'N/A',
+        riskWarnings: ['AI analysis failed — manual review recommended']
+      }
+    });
   }
 });
 

@@ -8,8 +8,10 @@
     "client": "vite --port 5173"
   },
   "dependencies": {
+    "@google/genai": "^1.44.0",
     "concurrently": "^9.1.2",
     "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
     "express": "^4.21.2",
     "node-fetch": "^3.3.2"
   },

@@ -191,6 +191,9 @@ function renderMarketCard(event, index) {
             <button class="insights-tab" data-tab="apis-${index}" onclick="switchTab(${index}, 'apis-${index}')">
               <span class="insights-tab-icon">🔌</span>Data APIs
             </button>
+            <button class="insights-tab" data-tab="ai-${index}" onclick="switchTab(${index}, 'ai-${index}')">
+              <span class="insights-tab-icon">🤖</span>AI Verdict
+            </button>
           </div>
           <div class="insights-tab-panels">
             <div class="insights-tab-panel active" id="panel-web-${index}">
@@ -204,6 +207,12 @@ function renderMarketCard(event, index) {
             </div>
             <div class="insights-tab-panel" id="panel-apis-${index}">
               ${renderAPIs(apis)}
+            </div>
+            <div class="insights-tab-panel" id="panel-ai-${index}">
+              <div class="ai-loading">
+                <div class="ai-loading-icon">🤖</div>
+                <p>AI is analyzing this market...</p>
+              </div>
             </div>
           </div>
         </div>
@@ -474,7 +483,134 @@ function renderInsights(index, articles) {
   `;
 }
 
+// ---- AI Analysis ----
+
+async function fetchAIAnalysis(event, newsArticles, metadata) {
+  try {
+    const outcomes = getTopOutcomes(event);
+    const payload = {
+      event: {
+        title: event.title,
+        description: event.description || '',
+        topic: metadata.topic,
+        riskScore: metadata.risk.score,
+        riskLevel: metadata.risk.level,
+        marketType: metadata.marketType,
+        daysUntilResolution: metadata.daysRemaining,
+        endDate: metadata.endDate ? metadata.endDate.toISOString() : null,
+        outcomes: outcomes.map(o => ({
+          name: o.label,
+          probability: `${(o.price * 100).toFixed(1)}%`,
+          price: o.price
+        })),
+        volume24h: formatVolume(event.volume24hr || 0),
+        totalVolume: formatVolume(event.volume || 0),
+        liquidity: formatVolume(event.liquidity || 0),
+        activeMarkets: metadata.activeMarkets,
+        recentNews: (newsArticles || []).slice(0, 5).map(a => ({
+          headline: a.title,
+          source: a.source,
+          date: a.date ? timeAgo(a.date) : 'recent'
+        }))
+      }
+    };
+
+    const response = await fetch(`${PROXY_API}/api/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      if (err.fallback) return err.fallback;
+      throw new Error(err.message || 'Analysis failed');
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.warn('AI analysis failed:', e);
+    return null;
+  }
+}
+
+function renderAIVerdict(index, analysis) {
+  const panel = document.getElementById(`panel-ai-${index}`);
+  if (!panel) return;
+
+  if (!analysis) {
+    panel.innerHTML = `
+            <div class="ai-error">
+                <p>⚠️ AI analysis unavailable</p>
+                <p class="error-detail">Make sure GEMINI_API_KEY is set in your .env file and restart the server.</p>
+            </div>`;
+    return;
+  }
+
+  const v = analysis.verdict.toLowerCase();
+  const verdictIcons = { opportunity: '💰', hold: '⏸️', avoid: '🚫' };
+  const icon = verdictIcons[v] || '❓';
+
+  panel.innerHTML = `
+        <div class="verdict-card ${v}">
+            <div class="verdict-header">
+                <span class="verdict-badge ${v}">
+                    <span class="verdict-badge-icon">${icon}</span>
+                    ${analysis.verdict}
+                </span>
+                <div class="confidence-meter">
+                    <div class="confidence-bar-track">
+                        <div class="confidence-bar-fill ${v}" style="width: ${analysis.confidence}%"></div>
+                    </div>
+                    <span class="confidence-label">${analysis.confidence}% confident</span>
+                </div>
+            </div>
+
+            <div class="verdict-section">
+                <div class="verdict-section-label">Analysis</div>
+                <div class="verdict-reasoning">${analysis.reasoning}</div>
+            </div>
+
+            <div class="verdict-section">
+                <div class="verdict-section-label">Edge</div>
+                <div class="verdict-edge">${analysis.edge}</div>
+            </div>
+
+            ${analysis.suggestedOutcome && analysis.suggestedOutcome !== 'None' ? `
+            <div class="verdict-section">
+                <div class="verdict-section-label">Suggestion</div>
+                <div class="verdict-suggestion">
+                    <div class="verdict-suggestion-item">
+                        <div class="verdict-suggestion-label">Outcome</div>
+                        <div class="verdict-suggestion-value">${analysis.suggestedOutcome}</div>
+                    </div>
+                    ${analysis.suggestedPrice && analysis.suggestedPrice !== 'N/A' ? `
+                    <div class="verdict-suggestion-item">
+                        <div class="verdict-suggestion-label">Fair Price</div>
+                        <div class="verdict-suggestion-value">${analysis.suggestedPrice}</div>
+                    </div>` : ''}
+                </div>
+            </div>` : ''}
+
+            ${analysis.riskWarnings && analysis.riskWarnings.length ? `
+            <div class="verdict-section">
+                <div class="verdict-section-label">Risk Warnings</div>
+                <div class="risk-warnings">
+                    ${analysis.riskWarnings.map(w => `
+                        <div class="risk-warning">
+                            <span class="risk-warning-icon">⚠</span>
+                            <span>${w}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>` : ''}
+        </div>`;
+}
+
 // ---- App Init ----
+
+// Store fetched articles per event for AI analysis
+const eventArticles = {};
 
 async function init() {
   const loadingEl = document.getElementById('loading');
@@ -492,13 +628,33 @@ async function init() {
     loadingEl.style.display = 'none';
     marketsEl.innerHTML = events.map((event, i) => renderMarketCard(event, i)).join('');
 
-    // Fetch insights for each event (in parallel)
+    // Fetch web insights for each event (in parallel)
     const insightPromises = events.map((event, i) => {
       const searchQuery = event.title;
-      return fetchInsights(searchQuery).then(articles => renderInsights(i, articles));
+      return fetchInsights(searchQuery).then(articles => {
+        eventArticles[i] = articles;
+        renderInsights(i, articles);
+      });
     });
 
     await Promise.allSettled(insightPromises);
+
+    // Now trigger AI analysis sequentially (free-tier rate limits)
+    for (let i = 0; i < events.length; i++) {
+      const metadata = extractMetadata(events[i]);
+      const articles = eventArticles[i] || [];
+      try {
+        const analysis = await fetchAIAnalysis(events[i], articles, metadata);
+        renderAIVerdict(i, analysis);
+      } catch (e) {
+        console.warn(`AI analysis failed for event ${i}:`, e);
+        renderAIVerdict(i, null);
+      }
+      // Delay between requests to avoid rate limiting
+      if (i < events.length - 1) {
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
 
   } catch (error) {
     console.error('App init error:', error);
@@ -510,4 +666,3 @@ async function init() {
 
 // Start the app
 init();
-
