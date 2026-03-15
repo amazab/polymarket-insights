@@ -2,6 +2,56 @@
 // POLYMARKET INSIGHTS — CLIENT APPLICATION
 // ============================================
 
+// ==========================================
+// REDDIT SENTIMENT 
+// ==========================================
+
+async function fetchRedditSentiment(query) {
+  try {
+    const response = await fetch(`${PROXY_API}/api/reddit?q=${encodeURIComponent(query)}`);
+    if (!response.ok) throw new Error('Reddit fetch failed');
+    const data = await response.json();
+    return data.posts || [];
+  } catch (err) {
+    console.error('Reddit sentiment error:', err);
+    return [];
+  }
+}
+
+function renderRedditSentiment(index, posts) {
+  const panel = document.getElementById(`panel-reddit-${index}`);
+  if (!panel) return;
+
+  if (!posts || !posts.length) {
+    panel.innerHTML = `<p class="no-insights">No recent Reddit discussions found.</p>`;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div class="insights-list">
+      ${posts.map(post => `
+        <a class="insight-item" href="${post.url}" target="_blank" rel="noopener">
+          <div class="insight-title" style="margin-bottom: 8px;">${post.title}</div>
+          <div class="insight-meta" style="display: flex; gap: 15px; align-items: center;">
+            <span class="insight-source" style="color: #ff4500;">r/${post.subreddit}</span>
+            <span style="display: flex; align-items: center; gap: 4px; color: var(--text-muted);">
+              <span>⬆️</span> ${post.upvotes}
+            </span>
+            <span style="display: flex; align-items: center; gap: 4px; color: var(--text-muted);">
+              <span>💬</span> ${post.comments}
+            </span>
+            ${post.date ? `<span style="color: var(--text-muted);">· ${timeAgo(post.date)}</span>` : ''}
+          </div>
+        </a>
+      `).join('')}
+    </div>
+  `;
+}
+
+// ==========================================
+// RENDERERS
+// ============================================
+
 const POLYMARKET_API = 'https://gamma-api.polymarket.com';
 const PROXY_API = 'http://localhost:3001';
 
@@ -296,6 +346,9 @@ function renderMarketCard(event, index) {
             <button class="insights-tab active" data-tab="web-${index}" onclick="switchTab(${index}, 'web-${index}')">
               <span class="insights-tab-icon">🌐</span>Web Insights
             </button>
+            <button class="insights-tab" data-tab="reddit-${index}" onclick="switchTab(${index}, 'reddit-${index}')">
+              <span class="insights-tab-icon">🗣️</span>Social Sentiment
+            </button>
             <button class="insights-tab" data-tab="meta-${index}" onclick="switchTab(${index}, 'meta-${index}')">
               <span class="insights-tab-icon">📋</span>Bet Metadata
             </button>
@@ -311,6 +364,12 @@ function renderMarketCard(event, index) {
               <div class="insights-loading">
                 <div class="insights-spinner"></div>
                 Scanning the web for insights...
+              </div>
+            </div>
+            <div class="insights-tab-panel" id="panel-reddit-${index}">
+              <div class="insights-loading">
+                <div class="insights-spinner"></div>
+                Analyzing Reddit sentiment...
               </div>
             </div>
             <div class="insights-tab-panel" id="panel-meta-${index}">
@@ -569,34 +628,60 @@ function renderAPIs(apis) {
 
 // ---- Render Web Insights into Tab Panel ----
 
-function renderInsights(index, articles) {
+function renderInsights(index, selectedArticles, excludedArticles = []) {
   const panel = document.getElementById(`panel-web-${index}`);
   if (!panel) return;
 
-  if (!articles.length) {
+  let html = '';
+
+  if (!selectedArticles.length && !excludedArticles.length) {
     panel.innerHTML = `<p class="no-insights">No recent articles found for this market.</p>`;
     return;
   }
 
-  panel.innerHTML = `
-    <div class="insights-list">
-      ${articles.map(article => `
-        <a class="insight-item" href="${article.url}" target="_blank" rel="noopener">
-          <div class="insight-title">${article.title}</div>
-          <div class="insight-meta">
-            <span class="insight-source">${article.source}</span>
-            ${article.date ? `<span>·</span><span>${timeAgo(article.date)}</span>` : ''}
-          </div>
-          ${article.snippet ? `<p class="insight-snippet">${truncate(article.snippet, 140)}</p>` : ''}
-        </a>
-      `).join('')}
-    </div>
-  `;
+  if (selectedArticles.length) {
+    html += `
+      <h3 style="margin-bottom: 15px; color: var(--text-primary); font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em;">Included in Analysis</h3>
+      <div class="insights-list">
+        ${selectedArticles.map(article => `
+          <a class="insight-item" href="${article.url}" target="_blank" rel="noopener">
+            <div class="insight-title">${article.title}</div>
+            <div class="insight-meta">
+              <span class="insight-source">${article.source}</span>
+              ${article.date ? `<span>·</span><span>${timeAgo(article.date)}</span>` : ''}
+            </div>
+            ${article.snippet ? `<p class="insight-snippet">${truncate(article.snippet, 140)}</p>` : ''}
+          </a>
+        `).join('')}
+      </div>
+    `;
+  } else {
+    html += `<p class="no-insights">No articles were included in the analysis.</p>`;
+  }
+
+  if (excludedArticles.length) {
+    html += `
+      <h3 style="margin-top: 30px; margin-bottom: 15px; color: var(--text-primary); font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em;">Excluded from Analysis</h3>
+      <div class="insights-list excluded-list" style="opacity: 0.6; filter: grayscale(100%);">
+        ${excludedArticles.map(article => `
+          <a class="insight-item" href="${article.url}" target="_blank" rel="noopener">
+            <div class="insight-title">${article.title}</div>
+            <div class="insight-meta">
+              <span class="insight-source">${article.source}</span>
+              ${article.date ? `<span>·</span><span>${timeAgo(article.date)}</span>` : ''}
+            </div>
+          </a>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  panel.innerHTML = html;
 }
 
 // ---- AI Analysis ----
 
-async function fetchAIAnalysis(event, newsArticles, metadata) {
+async function fetchAIAnalysis(event, newsArticles, metadata, redditPosts) {
   try {
     const outcomes = getTopOutcomes(event);
     const payload = {
@@ -622,6 +707,12 @@ async function fetchAIAnalysis(event, newsArticles, metadata) {
           headline: a.title,
           source: a.source,
           date: a.date ? timeAgo(a.date) : 'recent'
+        })),
+        redditSentiment: (redditPosts || []).slice(0, 5).map(p => ({
+          title: p.title,
+          subreddit: p.subreddit,
+          upvotes: p.upvotes,
+          comments: p.comments
         }))
       },
       // Pass AI provider config
@@ -738,6 +829,9 @@ function renderBetSelector(activeSlug = 'all') {
           <p>Select a prediction market from the categories below</p>
         </div>
         <div class="category-tabs" id="category-tabs">
+          <button class="category-tab" data-action="history" type="button" style="background: rgba(0, 204, 255, 0.1); color: #00ccff; border-color: rgba(0, 204, 255, 0.2);">
+            <span class="category-tab-icon">🕒</span>History
+          </button>
           ${CATEGORIES.map(cat => `
             <button class="category-tab ${cat.slug === activeSlug ? 'active' : ''}"
                     data-category="${cat.slug}" type="button">
@@ -761,6 +855,15 @@ function renderBetSelector(activeSlug = 'all') {
       renderBetSelector(slug);
     });
   });
+
+  // Attach history button listener
+  const historyBtn = container.querySelector('[data-action="history"]');
+  if (historyBtn) {
+    historyBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      showHistoryDialog();
+    });
+  }
 
   // Attach click listeners directly to bet cards
   container.querySelectorAll('[data-event-index]').forEach(card => {
@@ -895,13 +998,15 @@ async function showWebInsightsDialog(event) {
 
   continueBtn.addEventListener('click', () => {
     const checkboxes = container.querySelectorAll('.insight-checkbox:checked');
+    const uncheckedBoxes = container.querySelectorAll('.insight-checkbox:not(:checked)');
     const selectedArticles = Array.from(checkboxes).map(cb => articles[parseInt(cb.value)]);
+    const excludedArticles = Array.from(uncheckedBoxes).map(cb => articles[parseInt(cb.value)]);
 
     const overlay = document.getElementById('insights-review-overlay');
     overlay.classList.add('closing');
     setTimeout(() => {
       container.innerHTML = '';
-      showAnalysisConfirmationDialog(event, selectedArticles);
+      showAnalysisConfirmationDialog(event, selectedArticles, excludedArticles);
     }, 350);
   });
 
@@ -910,14 +1015,14 @@ async function showWebInsightsDialog(event) {
     overlay.classList.add('closing');
     setTimeout(() => {
       container.innerHTML = '';
-      showAnalysisConfirmationDialog(event, []);
+      showAnalysisConfirmationDialog(event, [], articles);
     }, 350);
   });
 }
 
 // ---- AI Analysis Confirmation Dialog ----
 
-function showAnalysisConfirmationDialog(event, selectedArticles) {
+function showAnalysisConfirmationDialog(event, selectedArticles, excludedArticles = []) {
   const container = document.getElementById('bet-selector-container');
 
   container.innerHTML = `
@@ -964,7 +1069,7 @@ function showAnalysisConfirmationDialog(event, selectedArticles) {
 
     setTimeout(() => {
       container.innerHTML = '';
-      analyzeSelectedBet(event, selectedArticles);
+      analyzeSelectedBet(event, selectedArticles, excludedArticles);
     }, 400); // slightly longer wait to let user see "analyzing" state
   });
 
@@ -1107,7 +1212,7 @@ function showApiKeyDialog(event) {
   });
 }
 
-async function analyzeSelectedBet(event, selectedArticles) {
+async function analyzeSelectedBet(event, selectedArticles, excludedArticles = []) {
   const marketsEl = document.getElementById('markets');
   const analysisView = document.getElementById('analysis-view');
 
@@ -1117,17 +1222,114 @@ async function analyzeSelectedBet(event, selectedArticles) {
 
   // Use the passed articles
   eventArticles[0] = selectedArticles;
-  renderInsights(0, selectedArticles);
+  renderInsights(0, selectedArticles, excludedArticles);
+
+  // Trigger Reddit Sentiment Fetch
+  let redditPosts = [];
+  try {
+    redditPosts = await fetchRedditSentiment(event.title);
+    renderRedditSentiment(0, redditPosts);
+  } catch (e) {
+    renderRedditSentiment(0, []);
+  }
 
   // Trigger AI analysis
   try {
     const metadata = extractMetadata(event);
-    const analysis = await fetchAIAnalysis(event, selectedArticles, metadata);
+    const analysis = await fetchAIAnalysis(event, selectedArticles, metadata, redditPosts);
     renderAIVerdict(0, analysis);
+    saveToHistory(event, analysis);
   } catch (e) {
     console.warn('AI analysis failed:', e);
     renderAIVerdict(0, null);
   }
+}
+
+// ---- History View ----
+
+function saveToHistory(event, analysis) {
+  if (!analysis || !analysis.verdict) return;
+
+  try {
+    const history = JSON.parse(localStorage.getItem('polymarket_history') || '[]');
+
+    // Create history item
+    const item = {
+      id: Date.now().toString(),
+      date: new Date().toISOString(),
+      eventTitle: event.title,
+      eventUrl: `https://polymarket.com/event/${event.slug}`,
+      verdict: analysis.verdict,
+      confidence: analysis.confidence
+    };
+
+    // Add to beginning of array
+    history.unshift(item);
+
+    // Keep only last 50 analyses
+    const trimmedHistory = history.slice(0, 50);
+    localStorage.setItem('polymarket_history', JSON.stringify(trimmedHistory));
+  } catch (e) {
+    console.error('Failed to save to history', e);
+  }
+}
+
+function showHistoryDialog() {
+  const container = document.getElementById('bet-selector-container');
+  let history = [];
+
+  try {
+    history = JSON.parse(localStorage.getItem('polymarket_history') || '[]');
+  } catch (e) {
+    console.error('Failed to load history', e);
+  }
+
+  container.innerHTML = `
+    <div class="bet-selector-overlay" id="history-overlay">
+      <div class="api-key-dialog">
+        <div class="dialog-header">
+          <div class="dialog-icon" style="background: rgba(0, 204, 255, 0.1); color: #00ccff; border-color: rgba(0, 204, 255, 0.2);">🕒</div>
+          <h2>Analysis <span class="accent" style="color: #00ccff;">History</span></h2>
+          <p>Your past AI-powered predictions</p>
+        </div>
+
+        <div class="history-list">
+          ${history.length === 0 ? `
+            <div class="history-empty">
+              No analysis history yet. Analyze a market to see it here!
+            </div>
+          ` : history.map(item => `
+            <div class="history-card" onclick="window.open('${item.eventUrl}', '_blank')">
+              <div class="history-header">
+                <div class="history-title">${item.eventTitle}</div>
+                <div class="history-date">${timeAgo(item.date)}</div>
+              </div>
+              <div class="history-verdict ${item.verdict.toLowerCase()}">
+                ${item.verdict === 'OPPORTUNITY' ? '💰 ' : item.verdict === 'AVOID' ? '🚫 ' : '⏸️ '}${item.verdict} 
+                <span style="font-weight: normal; margin-left: 5px; opacity: 0.8">${item.confidence}%</span>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="dialog-actions" style="display: flex; gap: 10px; margin-top: 20px;">
+          <button class="dialog-secondary-btn" id="history-back" type="button" style="width: 100%; padding: 14px; background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 12px; color: var(--text-primary); cursor: pointer; font-weight: 600;">
+            ← Back to Markets
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const backBtn = container.querySelector('#history-back');
+  backBtn.addEventListener('click', () => {
+    const overlay = document.getElementById('history-overlay');
+    overlay.classList.add('closing');
+    setTimeout(() => {
+      container.innerHTML = '';
+      renderBetSelector();
+    }, 350);
+  });
 }
 
 // ---- App Init ----

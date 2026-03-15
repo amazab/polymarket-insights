@@ -162,6 +162,49 @@ app.get('/api/search', async (req, res) => {
 });
 
 // ============================================
+// REDDIT SENTIMENT ENDPOINT
+// ============================================
+
+app.get('/api/reddit', async (req, res) => {
+  const query = req.query.q;
+  if (!query) {
+    return res.status(400).json({ error: 'Query parameter q is required' });
+  }
+
+  try {
+    // Search Reddit for the query, sorted by relevance or new
+    const response = await fetch(`https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=relevance&limit=8`);
+
+    if (!response.ok) {
+      throw new Error(`Reddit API returned ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.data || !data.data.children) {
+      return res.json({ posts: [] });
+    }
+
+    const posts = data.data.children.map(child => {
+      const post = child.data;
+      return {
+        title: post.title,
+        subreddit: post.subreddit_name_prefixed,
+        upvotes: post.ups,
+        url: `https://www.reddit.com${post.permalink}`,
+        date: new Date(post.created_utc * 1000).toISOString(),
+        comments: post.num_comments
+      };
+    });
+
+    res.json({ posts });
+  } catch (error) {
+    console.error('Reddit search error:', error);
+    res.status(500).json({ error: 'Reddit search failed', details: error.message });
+  }
+});
+
+// ============================================
 // AI ANALYSIS ENDPOINT (Gemini)
 // ============================================
 
@@ -172,6 +215,7 @@ You will receive structured data about a prediction market event including:
 - Current outcome probabilities (prices)
 - Trading volume and liquidity data
 - Recent news headlines about the topic
+- Reddit discussions (retail sentiment) regarding the topic
 - Market metadata (topic, risk score, days until resolution)
 
 Based on ALL available evidence, provide your analysis as a JSON object with these EXACT fields:
@@ -307,7 +351,7 @@ app.post('/api/analyze', async (req, res) => {
       fallback: {
         verdict: 'HOLD',
         confidence: 0,
-        reasoning: 'Unable to complete AI analysis. Please check your API key and try again.',
+        reasoning: `Unable to complete AI analysis. Reason: ${error.message}. Please try again or use a customized API key from OpenAI/Anthropic.`,
         edge: 'Analysis unavailable',
         suggestedOutcome: 'None',
         suggestedPrice: 'N/A',
