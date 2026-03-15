@@ -180,6 +180,7 @@ Based on ALL available evidence, provide your analysis as a JSON object with the
   "verdict": "OPPORTUNITY" | "HOLD" | "AVOID",
   "confidence": <number 0-100>,
   "reasoning": "<2-3 sentence analysis explaining your verdict>",
+  "agreeWithOdds": true | false (evaluate whether the provided web insights generally AGREE or DISAGREE with the highest probable outcome in the betting market),
   "edge": "<1 sentence describing the specific market inefficiency or opportunity, or why none exists>",
   "suggestedOutcome": "<the specific outcome to bet on, or 'None' if HOLD/AVOID>",
   "suggestedPrice": "<the fair probability you estimate for the suggested outcome, e.g. '72%', or 'N/A'>",

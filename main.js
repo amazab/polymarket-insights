@@ -901,7 +901,7 @@ async function showWebInsightsDialog(event) {
     overlay.classList.add('closing');
     setTimeout(() => {
       container.innerHTML = '';
-      analyzeSelectedBet(event, selectedArticles);
+      showAnalysisConfirmationDialog(event, selectedArticles);
     }, 350);
   });
 
@@ -910,7 +910,72 @@ async function showWebInsightsDialog(event) {
     overlay.classList.add('closing');
     setTimeout(() => {
       container.innerHTML = '';
-      analyzeSelectedBet(event, []);
+      showAnalysisConfirmationDialog(event, []);
+    }, 350);
+  });
+}
+
+// ---- AI Analysis Confirmation Dialog ----
+
+function showAnalysisConfirmationDialog(event, selectedArticles) {
+  const container = document.getElementById('bet-selector-container');
+
+  container.innerHTML = `
+    <div class="bet-selector-overlay" id="ai-confirm-overlay">
+      <div class="api-key-dialog" style="max-width: 500px; text-align: center;">
+        <div class="dialog-header">
+          <div class="dialog-icon" style="background: rgba(255, 170, 0, 0.1); color: #ffaa00; border-color: rgba(255, 170, 0, 0.2);">⚠️</div>
+          <h2>Confirm <span class="accent" style="color: #ffaa00;">Analysis</span></h2>
+          <p>You are about to run a Generative AI analysis.</p>
+        </div>
+
+        <div class="token-warning-box" style="background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 20px; text-align: left; margin: 20px 0;">
+          <h4 style="color: var(--text-primary); margin: 0 0 10px 0; display: flex; align-items: center; gap: 8px;">
+            <span>🪙</span> Token Consumption Warning
+          </h4>
+          <p style="color: var(--text-muted); font-size: 14px; margin: 0; line-height: 1.5;">
+            Running this analysis will transmit the market data and the <strong>${selectedArticles.length}</strong> selected web insights to the chosen LLM provider (${aiConfig.provider === 'gemini' ? 'Google Gemini' : aiConfig.provider === 'openai' ? 'OpenAI' : 'Anthropic Claude'}). This will consume tokens against your API key.
+          </p>
+        </div>
+
+        <div class="dialog-actions" style="display: flex; gap: 10px; margin-top: 20px;">
+          <button class="dialog-secondary-btn" id="confirm-cancel" type="button" style="flex: 1; padding: 14px; background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 12px; color: var(--text-primary); cursor: pointer; font-weight: 600;">
+            Cancel
+          </button>
+          <button class="dialog-continue-btn" id="confirm-proceed" type="button" style="flex: 2; background: linear-gradient(135deg, #ffaa00, #ff7700); box-shadow: 0 6px 25px rgba(255, 170, 0, 0.3);">
+            Proceed & Analyze
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Attach listeners
+  const proceedBtn = container.querySelector('#confirm-proceed');
+  const cancelBtn = container.querySelector('#confirm-cancel');
+
+  proceedBtn.addEventListener('click', () => {
+    const overlay = document.getElementById('ai-confirm-overlay');
+    overlay.classList.add('closing');
+
+    // Change button state to indicate loading
+    proceedBtn.innerHTML = '<span class="loading-spinner" style="width: 20px; height: 20px; border-width: 2px; display: inline-block; vertical-align: middle;"></span> Analyzing...';
+    proceedBtn.style.opacity = '0.8';
+
+    setTimeout(() => {
+      container.innerHTML = '';
+      analyzeSelectedBet(event, selectedArticles);
+    }, 400); // slightly longer wait to let user see "analyzing" state
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    const overlay = document.getElementById('ai-confirm-overlay');
+    overlay.classList.add('closing');
+    setTimeout(() => {
+      container.innerHTML = '';
+      // Go back to the selector view
+      document.getElementById('analysis-view').style.display = 'none';
+      renderBetSelector();
     }, 350);
   });
 }
@@ -919,6 +984,9 @@ async function showWebInsightsDialog(event) {
 
 function showApiKeyDialog(event) {
   const container = document.getElementById('bet-selector-container');
+  // Reset aiConfig to null initial state for choice
+  aiConfig.useDefault = null;
+
   container.innerHTML = `
     <div class="bet-selector-overlay" id="api-key-overlay">
       <div class="api-key-dialog">
@@ -929,7 +997,7 @@ function showApiKeyDialog(event) {
         </div>
 
         <div class="api-key-options">
-          <button class="api-key-option ${aiConfig.useDefault ? 'selected' : ''}" id="opt-default" type="button">
+          <button class="api-key-option" id="opt-default" type="button">
             <div class="option-icon">⚡</div>
             <div class="option-content">
               <div class="option-title">Use Default</div>
@@ -938,7 +1006,7 @@ function showApiKeyDialog(event) {
             <div class="option-check">✓</div>
           </button>
 
-          <button class="api-key-option ${!aiConfig.useDefault ? 'selected' : ''}" id="opt-custom" type="button">
+          <button class="api-key-option" id="opt-custom" type="button">
             <div class="option-icon">🔑</div>
             <div class="option-content">
               <div class="option-title">Use Your Own Key</div>
@@ -948,7 +1016,7 @@ function showApiKeyDialog(event) {
           </button>
         </div>
 
-        <div class="custom-key-panel" id="custom-key-panel" style="display: ${aiConfig.useDefault ? 'none' : 'block'}">
+        <div class="custom-key-panel" id="custom-key-panel" style="display: none;">
           <div class="custom-key-field">
             <label>Provider</label>
             <div class="provider-select-wrapper">
@@ -970,7 +1038,7 @@ function showApiKeyDialog(event) {
           </div>
         </div>
 
-        <button class="dialog-continue-btn" id="api-key-continue" type="button">
+        <button class="dialog-continue-btn" id="api-key-continue" type="button" style="display: none;">
           Continue to Analysis →
         </button>
       </div>
@@ -989,13 +1057,26 @@ function showApiKeyDialog(event) {
     optDefault.classList.add('selected');
     optCustom.classList.remove('selected');
     customPanel.style.display = 'none';
+    continueBtn.style.display = 'none';
+
+    // Set config and Auto-proceed immediately for a seamless UX
     aiConfig.useDefault = true;
+    aiConfig.provider = 'gemini';
+    aiConfig.apiKey = null;
+
+    const overlay = container.querySelector('#api-key-overlay');
+    overlay.classList.add('closing');
+    setTimeout(() => {
+      container.innerHTML = '';
+      showWebInsightsDialog(event);
+    }, 350);
   });
 
   optCustom.addEventListener('click', () => {
     optCustom.classList.add('selected');
     optDefault.classList.remove('selected');
     customPanel.style.display = 'block';
+    continueBtn.style.display = 'block';
     aiConfig.useDefault = false;
     setTimeout(() => keyInput.focus(), 100);
   });
@@ -1005,21 +1086,16 @@ function showApiKeyDialog(event) {
   });
 
   continueBtn.addEventListener('click', () => {
-    if (!aiConfig.useDefault) {
-      const provider = container.querySelector('#ai-provider').value;
-      const key = keyInput.value.trim();
-      if (!key) {
-        keyInput.classList.add('shake');
-        keyInput.placeholder = 'Please enter a valid API key';
-        setTimeout(() => keyInput.classList.remove('shake'), 600);
-        return;
-      }
-      aiConfig.provider = provider;
-      aiConfig.apiKey = key;
-    } else {
-      aiConfig.provider = 'gemini';
-      aiConfig.apiKey = null;
+    const provider = container.querySelector('#ai-provider').value;
+    const key = keyInput.value.trim();
+    if (!key) {
+      keyInput.classList.add('shake');
+      keyInput.placeholder = 'Please enter a valid API key';
+      setTimeout(() => keyInput.classList.remove('shake'), 600);
+      return;
     }
+    aiConfig.provider = provider;
+    aiConfig.apiKey = key;
 
     // Close dialog and move to Insights Review
     const overlay = container.querySelector('#api-key-overlay');
