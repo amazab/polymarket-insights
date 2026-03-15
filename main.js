@@ -21,6 +21,9 @@ const CATEGORIES = [
 const categoryCache = {};
 let allEvents = [];
 
+// AI provider configuration (set by API key dialog)
+let aiConfig = { provider: 'gemini', apiKey: null, useDefault: true };
+
 // ---- Data Fetching ----
 
 async function fetchAllEvents() {
@@ -620,7 +623,10 @@ async function fetchAIAnalysis(event, newsArticles, metadata) {
           source: a.source,
           date: a.date ? timeAgo(a.date) : 'recent'
         }))
-      }
+      },
+      // Pass AI provider config
+      aiProvider: aiConfig.provider,
+      aiApiKey: aiConfig.useDefault ? null : aiConfig.apiKey
     };
 
     const response = await fetch(`${PROXY_API}/api/analyze`, {
@@ -767,7 +773,7 @@ function renderBetSelector(activeSlug = 'all') {
           overlay.classList.add('closing');
           setTimeout(() => {
             overlay.remove();
-            analyzeSelectedBet(selectedEvent);
+            showApiKeyDialog(selectedEvent);
           }, 350);
         }
       }
@@ -815,6 +821,122 @@ window.showBetSelector = function () {
   document.getElementById('analysis-view').style.display = 'none';
   renderBetSelector();
 };
+
+// ---- API Key Dialog ----
+
+function showApiKeyDialog(event) {
+  const container = document.getElementById('bet-selector-container');
+  container.innerHTML = `
+    <div class="bet-selector-overlay" id="api-key-overlay">
+      <div class="api-key-dialog">
+        <div class="dialog-header">
+          <div class="dialog-icon">🤖</div>
+          <h2>AI Analysis <span class="accent">Setup</span></h2>
+          <p>Choose how to power the AI analysis for this market</p>
+        </div>
+
+        <div class="api-key-options">
+          <button class="api-key-option ${aiConfig.useDefault ? 'selected' : ''}" id="opt-default" type="button">
+            <div class="option-icon">⚡</div>
+            <div class="option-content">
+              <div class="option-title">Use Default</div>
+              <div class="option-desc">Free Gemini-powered analysis — ready to go</div>
+            </div>
+            <div class="option-check">✓</div>
+          </button>
+
+          <button class="api-key-option ${!aiConfig.useDefault ? 'selected' : ''}" id="opt-custom" type="button">
+            <div class="option-icon">🔑</div>
+            <div class="option-content">
+              <div class="option-title">Use Your Own Key</div>
+              <div class="option-desc">Bring your own Gemini, OpenAI, or Claude API key</div>
+            </div>
+            <div class="option-check">✓</div>
+          </button>
+        </div>
+
+        <div class="custom-key-panel" id="custom-key-panel" style="display: ${aiConfig.useDefault ? 'none' : 'block'}">
+          <div class="custom-key-field">
+            <label>Provider</label>
+            <div class="provider-select-wrapper">
+              <select id="ai-provider" class="provider-select">
+                <option value="gemini" ${aiConfig.provider === 'gemini' ? 'selected' : ''}>🟢 Google Gemini</option>
+                <option value="openai" ${aiConfig.provider === 'openai' ? 'selected' : ''}>🟣 OpenAI (GPT)</option>
+                <option value="claude" ${aiConfig.provider === 'claude' ? 'selected' : ''}>🟠 Anthropic Claude</option>
+              </select>
+            </div>
+          </div>
+          <div class="custom-key-field">
+            <label>API Key</label>
+            <div class="key-input-wrapper">
+              <input type="password" id="ai-api-key" class="key-input"
+                     placeholder="Paste your API key here..."
+                     value="${aiConfig.apiKey || ''}" />
+              <button class="key-toggle" id="key-toggle" type="button">👁</button>
+            </div>
+          </div>
+        </div>
+
+        <button class="dialog-continue-btn" id="api-key-continue" type="button">
+          Continue to Analysis →
+        </button>
+      </div>
+    </div>
+  `;
+
+  // Attach listeners
+  const optDefault = container.querySelector('#opt-default');
+  const optCustom = container.querySelector('#opt-custom');
+  const customPanel = container.querySelector('#custom-key-panel');
+  const continueBtn = container.querySelector('#api-key-continue');
+  const keyToggle = container.querySelector('#key-toggle');
+  const keyInput = container.querySelector('#ai-api-key');
+
+  optDefault.addEventListener('click', () => {
+    optDefault.classList.add('selected');
+    optCustom.classList.remove('selected');
+    customPanel.style.display = 'none';
+    aiConfig.useDefault = true;
+  });
+
+  optCustom.addEventListener('click', () => {
+    optCustom.classList.add('selected');
+    optDefault.classList.remove('selected');
+    customPanel.style.display = 'block';
+    aiConfig.useDefault = false;
+    setTimeout(() => keyInput.focus(), 100);
+  });
+
+  keyToggle.addEventListener('click', () => {
+    keyInput.type = keyInput.type === 'password' ? 'text' : 'password';
+  });
+
+  continueBtn.addEventListener('click', () => {
+    if (!aiConfig.useDefault) {
+      const provider = container.querySelector('#ai-provider').value;
+      const key = keyInput.value.trim();
+      if (!key) {
+        keyInput.classList.add('shake');
+        keyInput.placeholder = 'Please enter a valid API key';
+        setTimeout(() => keyInput.classList.remove('shake'), 600);
+        return;
+      }
+      aiConfig.provider = provider;
+      aiConfig.apiKey = key;
+    } else {
+      aiConfig.provider = 'gemini';
+      aiConfig.apiKey = null;
+    }
+
+    // Close dialog and start analysis
+    const overlay = container.querySelector('#api-key-overlay');
+    overlay.classList.add('closing');
+    setTimeout(() => {
+      container.innerHTML = '';
+      analyzeSelectedBet(event);
+    }, 350);
+  });
+}
 
 async function analyzeSelectedBet(event) {
   const marketsEl = document.getElementById('markets');

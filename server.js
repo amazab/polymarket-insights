@@ -3,7 +3,8 @@ import cors from 'cors';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
-
+import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 dotenv.config();
 
 const app = express();
@@ -196,16 +197,19 @@ IMPORTANT RULES:
 - ALWAYS respond with valid JSON only, no markdown formatting around it`;
 
 app.post('/api/analyze', async (req, res) => {
-  if (!genai) {
-    return res.status(503).json({
-      error: 'AI not configured',
-      message: 'Set GEMINI_API_KEY in .env file to enable AI analysis'
-    });
-  }
-
-  const { event } = req.body;
+  const { event, aiProvider, aiApiKey } = req.body;
   if (!event) {
     return res.status(400).json({ error: 'Event data is required' });
+  }
+
+  const provider = aiProvider || 'gemini';
+  const customKey = aiApiKey || null;
+
+  if (provider === 'gemini' && !customKey && !genai) {
+    return res.status(503).json({
+      error: 'AI not configured',
+      message: 'Set GEMINI_API_KEY in .env file to enable default AI analysis'
+    });
   }
 
   try {
@@ -213,33 +217,58 @@ app.post('/api/analyze', async (req, res) => {
     const context = JSON.stringify(event, null, 2);
     const userPrompt = `Analyze this prediction market event and provide your verdict:\n\n${context}`;
 
-    // Retry logic for rate limiting
-    let response;
+    let text = '';
     const maxRetries = 3;
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        response = await genai.models.generateContent({
-          model: 'gemini-2.0-flash',
-          contents: userPrompt,
-          config: {
-            systemInstruction: ANALYSIS_PROMPT,
+        if (provider === 'openai') {
+          const openai = new OpenAI({ apiKey: customKey });
+          const response = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [
+              { role: 'system', content: ANALYSIS_PROMPT },
+              { role: 'user', content: userPrompt }
+            ],
             temperature: 0.3,
-            maxOutputTokens: 1000,
-          }
-        });
+            max_tokens: 1000
+          });
+          text = response.choices[0].message.content.trim();
+        } else if (provider === 'claude') {
+          const anthropic = new Anthropic({ apiKey: customKey });
+          const response = await anthropic.messages.create({
+            model: 'claude-3-7-sonnet-20250219',
+            system: ANALYSIS_PROMPT,
+            messages: [{ role: 'user', content: userPrompt }],
+            temperature: 0.3,
+            max_tokens: 1000
+          });
+          text = response.content[0].text.trim();
+        } else {
+          // Gemini
+          const geminiClient = customKey ? new GoogleGenAI({ apiKey: customKey }) : genai;
+          const response = await geminiClient.models.generateContent({
+            model: 'gemini-2.0-flash',
+            contents: userPrompt,
+            config: {
+              systemInstruction: ANALYSIS_PROMPT,
+              temperature: 0.3,
+              maxOutputTokens: 1000,
+            }
+          });
+          text = response.text.trim();
+        }
         break; // Success — exit retry loop
       } catch (apiError) {
         if (apiError.status === 429 && attempt < maxRetries) {
           const delay = Math.pow(2, attempt + 1) * 5000; // 10s, 20s, 40s
-          console.log(`Rate limited, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...`);
+          console.log(`[${provider}] Rate limited, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${maxRetries})...`);
           await new Promise(r => setTimeout(r, delay));
         } else {
           throw apiError;
         }
       }
     }
-
-    const text = response.text.trim();
 
     // Parse the JSON from the response (strip markdown fences if present)
     let jsonStr = text;
