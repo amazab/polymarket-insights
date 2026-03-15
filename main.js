@@ -57,13 +57,75 @@ function getEventsForCategory(slug) {
   return allEvents.filter(e => categorizeEvent(e) === slug).slice(0, 3);
 }
 
+// Generate a clean search query from an event title
+function generateSearchQuery(title) {
+  let query = title;
+
+  // Remove fill-in-the-blanks (underscores)
+  query = query.replace(/_+/g, ' ');
+
+  // Remove hash symbols and number placeholders (e.g., "# tweets")
+  query = query.replace(/#/g, '');
+
+  // Remove date ranges (e.g., "March 10 - March 17, 2026")
+  query = query.replace(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}\s*[-–]\s*(January|February|March|April|May|June|July|August|September|October|November|December)?\s*\d{1,2},?\s*\d{0,4}/gi, '');
+
+  // Remove isolated dates (e.g., "on March 16?")
+  query = query.replace(/\bon\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}\??/gi, '');
+
+  // Remove price thresholds (e.g., "above $70k", "hit $100k")
+  query = query.replace(/(above|below|hit|reach|over|under)\s*\$?[\d,.]+[kKmMbB]?/gi, '');
+
+  // Remove "by end of Month" patterns
+  query = query.replace(/by\s+end\s+of\s+\w+/gi, '');
+
+  // Remove "in Month" at the end
+  query = query.replace(/\bin\s+(January|February|March|April|May|June|July|August|September|October|November|December)\??$/gi, '');
+
+  // Remove question marks and extra whitespace
+  query = query.replace(/[?]/g, '').replace(/\s+/g, ' ').trim();
+
+  return query;
+}
+
+// Generate a simplified fallback query (just the core topic)
+function generateFallbackQuery(title) {
+  let query = generateSearchQuery(title);
+
+  // Extract just the key subject words (remove common filler)
+  const fillers = ['will', 'what', 'who', 'how', 'when', 'where', 'which', 'price', 'winner', 'the', 'vs', 'vs.', 'a', 'an', 'is', 'be', 'to', 'of', 'and', 'or', 'for', 'with', 'this', 'that', 'next', 'last'];
+  const words = query.split(/\s+/).filter(w => !fillers.includes(w.toLowerCase()) && w.length > 1);
+
+  // Take the most important words (first 4)
+  return words.slice(0, 4).join(' ');
+}
+
 async function fetchInsights(query) {
   try {
-    const url = `${PROXY_API}/api/search?q=${encodeURIComponent(query)}`;
+    // First try with cleaned-up query
+    const cleanQuery = generateSearchQuery(query);
+    const url = `${PROXY_API}/api/search?q=${encodeURIComponent(cleanQuery)}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error('Search failed');
     const data = await response.json();
-    return data.results || [];
+    const results = data.results || [];
+
+    // If we got results, return them
+    if (results.length > 0) return results;
+
+    // Fallback: try with simplified query
+    const fallbackQuery = generateFallbackQuery(query);
+    if (fallbackQuery && fallbackQuery !== cleanQuery) {
+      console.log('No results for:', cleanQuery, '→ retrying with:', fallbackQuery);
+      const fbUrl = `${PROXY_API}/api/search?q=${encodeURIComponent(fallbackQuery)}`;
+      const fbResponse = await fetch(fbUrl);
+      if (fbResponse.ok) {
+        const fbData = await fbResponse.json();
+        return fbData.results || [];
+      }
+    }
+
+    return [];
   } catch (e) {
     console.warn('Failed to fetch insights for:', query, e);
     return [];
