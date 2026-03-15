@@ -1,15 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Polymarket Insights — Top Bets &amp; Analysis</title>
-  <meta name="description" content="Track the hottest prediction markets on Polymarket with real-time web insights and analysis." />
+  <meta name="description"
+    content="Track the hottest prediction markets on Polymarket with real-time web insights and analysis." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet" />
   <link rel="stylesheet" href="/index.css" />
 </head>
+
 <body>
   <div class="bg-glow bg-glow-1"></div>
   <div class="bg-glow bg-glow-2"></div>
@@ -20,19 +24,19 @@
       <div class="logo">
         <div class="logo-icon">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <path d="M14 2L26 8V20L14 26L2 20V8L14 2Z" stroke="url(#logo-grad)" stroke-width="2" fill="none"/>
-            <path d="M14 8L20 11V17L14 20L8 17V11L14 8Z" fill="url(#logo-grad)"/>
+            <path d="M14 2L26 8V20L14 26L2 20V8L14 2Z" stroke="url(#logo-grad)" stroke-width="2" fill="none" />
+            <path d="M14 8L20 11V17L14 20L8 17V11L14 8Z" fill="url(#logo-grad)" />
             <defs>
               <linearGradient id="logo-grad" x1="2" y1="2" x2="26" y2="26">
-                <stop offset="0%" stop-color="#06b6d4"/>
-                <stop offset="100%" stop-color="#8b5cf6"/>
+                <stop offset="0%" stop-color="#06b6d4" />
+                <stop offset="100%" stop-color="#8b5cf6" />
               </linearGradient>
             </defs>
           </svg>
         </div>
         <h1>Polymarket <span class="accent">Insights</span></h1>
       </div>
-      <p class="subtitle">Top trending prediction markets with real-time web analysis</p>
+      <p class="subtitle">Explore prediction markets and get AI-powered analysis</p>
     </div>
   </header>
 
@@ -43,7 +47,7 @@
         <div class="loader-ring"></div>
         <div class="loader-ring"></div>
       </div>
-      <p>Fetching top markets from Polymarket...</p>
+      <p>Loading markets from Polymarket...</p>
     </div>
 
     <div id="error" class="error-state" style="display:none">
@@ -53,13 +57,23 @@
       <button onclick="location.reload()" class="retry-btn">Try Again</button>
     </div>
 
-    <div id="markets" class="markets-grid"></div>
+
+    <div id="analysis-view" style="display:none">
+      <button class="back-btn" onclick="showBetSelector()">
+        <span>←</span> Choose Another Bet
+      </button>
+      <div id="markets" class="markets-grid"></div>
+    </div>
   </main>
 
+  <div id="bet-selector-container"></div>
+
   <footer class="footer">
-    <p>Data from <a href="https://polymarket.com" target="_blank" rel="noopener">Polymarket</a> · Insights gathered from web sources · Not financial advice</p>
+    <p>Data from <a href="https://polymarket.com" target="_blank" rel="noopener">Polymarket</a> · Insights gathered from
+      web sources · Not financial advice</p>
   </footer>
 
   <script type="module" src="/main.js"></script>
 </body>
+
 </html>

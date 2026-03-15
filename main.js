@@ -5,14 +5,56 @@
 const POLYMARKET_API = 'https://gamma-api.polymarket.com';
 const PROXY_API = 'http://localhost:3001';
 
+// ---- Categories ----
+
+const CATEGORIES = [
+  { slug: 'all', label: 'Trending', icon: '🔥', query: '' },
+  { slug: 'politics', label: 'Politics', icon: '🏛️', query: 'politics' },
+  { slug: 'crypto', label: 'Crypto', icon: '₿', query: 'crypto' },
+  { slug: 'sports', label: 'Sports', icon: '⚽', query: 'sports' },
+  { slug: 'pop-culture', label: 'Pop Culture', icon: '🎬', query: 'pop culture' },
+  { slug: 'business', label: 'Business', icon: '💼', query: 'business' },
+  { slug: 'science', label: 'Science', icon: '🔬', query: 'science' },
+];
+
+// Cache for fetched events per category
+const categoryCache = {};
+let allEvents = [];
+
 // ---- Data Fetching ----
 
-async function fetchTopEvents() {
-  const url = `${PROXY_API}/api/polymarket/events?limit=3&order=volume24hr&ascending=false&active=true&closed=false`;
+async function fetchAllEvents() {
+  const url = `${PROXY_API}/api/polymarket/events?limit=50&order=volume24hr&ascending=false&active=true&closed=false`;
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Polymarket API error: ${response.status}`);
-  const events = await response.json();
-  return events;
+  return await response.json();
+}
+
+function categorizeEvent(event) {
+  const text = `${event.title} ${event.description || ''} ${(event.tags || []).map(t => t.label || t.slug || '').join(' ')}`.toLowerCase();
+
+  const rules = [
+    { slug: 'politics', keywords: ['president', 'election', 'congress', 'senate', 'democrat', 'republican', 'trump', 'biden', 'government', 'political', 'vote', 'governor', 'mayor', 'party', 'legislation', 'tariff', 'fed ', 'federal', 'primaries', 'cabinet', 'impeach'] },
+    { slug: 'crypto', keywords: ['bitcoin', 'ethereum', 'crypto', 'btc', 'eth', 'token', 'blockchain', 'defi', 'nft', 'solana', 'altcoin', 'coin', 'web3', 'doge', 'memecoin'] },
+    { slug: 'sports', keywords: ['nba', 'nfl', 'mlb', 'nhl', 'soccer', 'football', 'basketball', 'baseball', 'tennis', 'ufc', 'boxing', 'f1', 'championship', 'playoff', 'mvp', 'super bowl', 'world cup', 'olympics'] },
+    { slug: 'pop-culture', keywords: ['movie', 'film', 'oscar', 'grammy', 'celebrity', 'music', 'album', 'award', 'tv show', 'netflix', 'tiktok', 'kardashian', 'taylor swift', 'concert', 'entertainment'] },
+    { slug: 'business', keywords: ['stock', 'market', 'company', 'ceo', 'ipo', 'revenue', 'gdp', 'inflation', 'interest rate', 'economy', 'recession', 'merger', 'acquisition', 'layoff', 'earnings', 's&p', 'nasdaq'] },
+    { slug: 'science', keywords: ['spacex', 'nasa', 'ai ', 'artificial intelligence', 'climate', 'vaccine', 'research', 'discovery', 'mars', 'quantum', 'gene', 'lab', 'study', 'scientific'] },
+  ];
+
+  for (const rule of rules) {
+    if (rule.keywords.some(kw => text.includes(kw))) {
+      return rule.slug;
+    }
+  }
+  return null;
+}
+
+function getEventsForCategory(slug) {
+  if (slug === 'all') {
+    return allEvents.slice(0, 3);
+  }
+  return allEvents.filter(e => categorizeEvent(e) === slug).slice(0, 3);
 }
 
 async function fetchInsights(query) {
@@ -607,54 +649,147 @@ function renderAIVerdict(index, analysis) {
         </div>`;
 }
 
-// ---- App Init ----
+// ---- Bet Selector Dialog ----
+
+function renderBetSelector(activeSlug = 'all') {
+  const events = getEventsForCategory(activeSlug);
+  const container = document.getElementById('bet-selector-container');
+
+  // Store current events for selection
+  container._currentEvents = events;
+
+  container.innerHTML = `
+    <div class="bet-selector-overlay" id="bet-selector-overlay">
+      <div class="bet-selector">
+        <div class="selector-header">
+          <h2>Choose a <span class="accent">Market</span> to Analyze</h2>
+          <p>Select a prediction market from the categories below</p>
+        </div>
+        <div class="category-tabs" id="category-tabs">
+          ${CATEGORIES.map(cat => `
+            <button class="category-tab ${cat.slug === activeSlug ? 'active' : ''}"
+                    data-category="${cat.slug}" type="button">
+              <span class="category-tab-icon">${cat.icon}</span>
+              ${cat.label}
+            </button>
+          `).join('')}
+        </div>
+        <div class="selector-bets" id="selector-bets">
+          ${renderSelectorBets(events)}
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Attach click listeners directly to tabs
+  container.querySelectorAll('[data-category]').forEach(tab => {
+    tab.addEventListener('click', function (e) {
+      e.stopPropagation();
+      const slug = this.dataset.category;
+      renderBetSelector(slug);
+    });
+  });
+
+  // Attach click listeners directly to bet cards
+  container.querySelectorAll('[data-event-index]').forEach(card => {
+    card.addEventListener('click', function () {
+      const index = parseInt(this.dataset.eventIndex);
+      const selectedEvent = events[index];
+      if (selectedEvent) {
+        const overlay = document.getElementById('bet-selector-overlay');
+        if (overlay) {
+          overlay.classList.add('closing');
+          setTimeout(() => {
+            overlay.remove();
+            analyzeSelectedBet(selectedEvent);
+          }, 350);
+        }
+      }
+    });
+  });
+}
+
+function renderSelectorBets(events) {
+  if (!events || !events.length) {
+    return `<div class="selector-empty">No active markets in this category right now</div>`;
+  }
+
+  return `
+    <div class="selector-bets-grid">
+      ${events.map((event, i) => {
+    const outcomes = getTopOutcomes(event);
+    const topOutcome = outcomes[0];
+    const volume = formatVolume(event.volume24hr || event.volume || 0);
+    return `
+          <div class="selector-bet-card" data-event-index="${i}">
+            <img class="selector-bet-image"
+                 src="${event.image || event.icon || ''}"
+                 alt="${event.title}"
+                 onerror="this.style.display='none'" />
+            <div class="selector-bet-info">
+              <div class="selector-bet-title">${event.title}</div>
+              <div class="selector-bet-meta">
+                <span class="selector-bet-volume">${volume} vol</span>
+                ${topOutcome ? `<span class="selector-bet-outcomes">${topOutcome.label}: ${formatPercent(topOutcome.price)}</span>` : ''}
+              </div>
+            </div>
+            <span class="selector-bet-arrow">→</span>
+          </div>
+        `;
+  }).join('')}
+    </div>
+  `;
+}
+
 
 // Store fetched articles per event for AI analysis
 const eventArticles = {};
 
+window.showBetSelector = function () {
+  document.getElementById('analysis-view').style.display = 'none';
+  renderBetSelector();
+};
+
+async function analyzeSelectedBet(event) {
+  const marketsEl = document.getElementById('markets');
+  const analysisView = document.getElementById('analysis-view');
+
+  // Show analysis view with the single card
+  analysisView.style.display = 'block';
+  marketsEl.innerHTML = renderMarketCard(event, 0);
+
+  // Fetch web insights
+  const articles = await fetchInsights(event.title);
+  eventArticles[0] = articles;
+  renderInsights(0, articles);
+
+  // Trigger AI analysis
+  try {
+    const metadata = extractMetadata(event);
+    const analysis = await fetchAIAnalysis(event, articles, metadata);
+    renderAIVerdict(0, analysis);
+  } catch (e) {
+    console.warn('AI analysis failed:', e);
+    renderAIVerdict(0, null);
+  }
+}
+
+// ---- App Init ----
+
 async function init() {
   const loadingEl = document.getElementById('loading');
   const errorEl = document.getElementById('error');
-  const marketsEl = document.getElementById('markets');
 
   try {
-    const events = await fetchTopEvents();
+    allEvents = await fetchAllEvents();
 
-    if (!events || !events.length) {
+    if (!allEvents || !allEvents.length) {
       throw new Error('No active events found');
     }
 
-    // Hide loading, render cards
+    // Hide loading, show bet selector
     loadingEl.style.display = 'none';
-    marketsEl.innerHTML = events.map((event, i) => renderMarketCard(event, i)).join('');
-
-    // Fetch web insights for each event (in parallel)
-    const insightPromises = events.map((event, i) => {
-      const searchQuery = event.title;
-      return fetchInsights(searchQuery).then(articles => {
-        eventArticles[i] = articles;
-        renderInsights(i, articles);
-      });
-    });
-
-    await Promise.allSettled(insightPromises);
-
-    // Now trigger AI analysis sequentially (free-tier rate limits)
-    for (let i = 0; i < events.length; i++) {
-      const metadata = extractMetadata(events[i]);
-      const articles = eventArticles[i] || [];
-      try {
-        const analysis = await fetchAIAnalysis(events[i], articles, metadata);
-        renderAIVerdict(i, analysis);
-      } catch (e) {
-        console.warn(`AI analysis failed for event ${i}:`, e);
-        renderAIVerdict(i, null);
-      }
-      // Delay between requests to avoid rate limiting
-      if (i < events.length - 1) {
-        await new Promise(r => setTimeout(r, 3000));
-      }
-    }
+    renderBetSelector();
 
   } catch (error) {
     console.error('App init error:', error);
