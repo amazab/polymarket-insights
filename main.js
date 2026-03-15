@@ -822,6 +822,99 @@ window.showBetSelector = function () {
   renderBetSelector();
 };
 
+// ---- Web Insights Review Dialog ----
+
+async function showWebInsightsDialog(event) {
+  const container = document.getElementById('bet-selector-container');
+
+  // Show a loading state in the dialog space
+  container.innerHTML = `
+    <div class="bet-selector-overlay" id="insights-review-overlay">
+      <div class="api-key-dialog" style="text-align: center; padding: 40px;">
+        <div class="loading-spinner"></div>
+        <h3 style="margin-top: 20px; color: var(--text-primary);">Fetching Web Insights...</h3>
+        <p style="color: var(--text-muted); font-size: 14px; margin-top: 10px;">Finding relevant recent articles for analysis</p>
+      </div>
+    </div>
+  `;
+
+  // Fetch the articles
+  const articles = await fetchInsights(event.title);
+
+  // If no articles found, just proceed directly
+  if (!articles || articles.length === 0) {
+    const overlay = document.getElementById('insights-review-overlay');
+    overlay.classList.add('closing');
+    setTimeout(() => {
+      container.innerHTML = '';
+      analyzeSelectedBet(event, []);
+    }, 350);
+    return;
+  }
+
+  // Render the review dialog
+  container.innerHTML = `
+    <div class="bet-selector-overlay" id="insights-review-overlay">
+      <div class="api-key-dialog insights-review-dialog" style="max-width: 650px;">
+        <div class="dialog-header">
+          <div class="dialog-icon">📰</div>
+          <h2>Review <span class="accent">Web Insights</span></h2>
+          <p>Select which articles to include in the AI analysis context</p>
+        </div>
+
+        <div class="insights-review-list" id="insights-review-list">
+          ${articles.map((article, index) => `
+            <label class="insight-review-item">
+              <input type="checkbox" class="insight-checkbox" value="${index}" checked>
+              <div class="insight-review-content">
+                <div class="insight-title">${article.title}</div>
+                <div class="insight-meta">
+                  <span class="insight-source">${article.source}</span>
+                  ${article.date ? `<span>·</span><span>${timeAgo(article.date)}</span>` : ''}
+                </div>
+              </div>
+            </label>
+          `).join('')}
+        </div>
+
+        <div class="dialog-actions" style="display: flex; gap: 10px; margin-top: 20px;">
+          <button class="dialog-secondary-btn" id="insights-skip" type="button" style="flex: 1; padding: 14px; background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 12px; color: var(--text-primary); cursor: pointer; font-weight: 600;">
+            Skip Insights
+          </button>
+          <button class="dialog-continue-btn" id="insights-continue" type="button" style="flex: 2;">
+            Analyze with Selected →
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Attach listeners
+  const continueBtn = container.querySelector('#insights-continue');
+  const skipBtn = container.querySelector('#insights-skip');
+
+  continueBtn.addEventListener('click', () => {
+    const checkboxes = container.querySelectorAll('.insight-checkbox:checked');
+    const selectedArticles = Array.from(checkboxes).map(cb => articles[parseInt(cb.value)]);
+
+    const overlay = document.getElementById('insights-review-overlay');
+    overlay.classList.add('closing');
+    setTimeout(() => {
+      container.innerHTML = '';
+      analyzeSelectedBet(event, selectedArticles);
+    }, 350);
+  });
+
+  skipBtn.addEventListener('click', () => {
+    const overlay = document.getElementById('insights-review-overlay');
+    overlay.classList.add('closing');
+    setTimeout(() => {
+      container.innerHTML = '';
+      analyzeSelectedBet(event, []);
+    }, 350);
+  });
+}
+
 // ---- API Key Dialog ----
 
 function showApiKeyDialog(event) {
@@ -928,17 +1021,17 @@ function showApiKeyDialog(event) {
       aiConfig.apiKey = null;
     }
 
-    // Close dialog and start analysis
+    // Close dialog and move to Insights Review
     const overlay = container.querySelector('#api-key-overlay');
     overlay.classList.add('closing');
     setTimeout(() => {
       container.innerHTML = '';
-      analyzeSelectedBet(event);
+      showWebInsightsDialog(event);
     }, 350);
   });
 }
 
-async function analyzeSelectedBet(event) {
+async function analyzeSelectedBet(event, selectedArticles) {
   const marketsEl = document.getElementById('markets');
   const analysisView = document.getElementById('analysis-view');
 
@@ -946,15 +1039,14 @@ async function analyzeSelectedBet(event) {
   analysisView.style.display = 'block';
   marketsEl.innerHTML = renderMarketCard(event, 0);
 
-  // Fetch web insights
-  const articles = await fetchInsights(event.title);
-  eventArticles[0] = articles;
-  renderInsights(0, articles);
+  // Use the passed articles
+  eventArticles[0] = selectedArticles;
+  renderInsights(0, selectedArticles);
 
   // Trigger AI analysis
   try {
     const metadata = extractMetadata(event);
-    const analysis = await fetchAIAnalysis(event, articles, metadata);
+    const analysis = await fetchAIAnalysis(event, selectedArticles, metadata);
     renderAIVerdict(0, analysis);
   } catch (e) {
     console.warn('AI analysis failed:', e);

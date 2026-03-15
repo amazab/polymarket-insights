@@ -886,6 +886,110 @@ a:hover {
   border-color: #ff4444 !important;
 }
 
+/* ============================================
+   INSIGHTS REVIEW DIALOG
+   ============================================ */
+
+.insights-review-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+}
+
+.insights-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  overflow-y: auto;
+  padding-right: var(--space-xs);
+  margin-bottom: var(--space-md);
+  flex: 1;
+  min-height: 200px;
+}
+
+/* Custom scrollbar for insights list */
+.insights-review-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.insights-review-list::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+  border-radius: 4px;
+}
+
+.insights-review-list::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 4px;
+}
+
+.insight-review-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.insight-review-item:hover {
+  border-color: var(--accent-cyan);
+  background: rgba(0, 212, 255, 0.03);
+}
+
+.insight-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-subtle);
+  border-radius: 6px;
+  margin-top: 2px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.insight-checkbox:checked {
+  background: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+}
+
+.insight-checkbox:checked::after {
+  content: '✓';
+  position: absolute;
+  color: var(--bg-primary);
+  font-size: 14px;
+  font-weight: bold;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.insight-review-content {
+  flex: 1;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(0, 212, 255, 0.1);
+  border-radius: 50%;
+  border-top-color: var(--accent-cyan);
+  animation: spin 1s ease-in-out infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Back Button */
 .back-btn {
   display: inline-flex;
