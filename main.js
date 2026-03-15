@@ -275,6 +275,10 @@ function renderMarketCard(event, index) {
           <span class="stat-label">Liquidity</span>
           <span class="stat-value green">${formatVolume(event.liquidity || 0)}</span>
         </div>
+        ${event.endDate ? `<div class="stat">
+          <span class="stat-label">End Date</span>
+          <span class="stat-value">${new Date(event.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+        </div>` : ''}
       </div>
 
       ${renderOutcomeBars(outcomes)}
